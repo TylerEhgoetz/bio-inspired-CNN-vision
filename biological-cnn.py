@@ -7,6 +7,14 @@ import numpy as np
 
 MNIST_FASHIONMNIST_CLASSES = 10
 
+# Utility Functions
+
+
+def add_noise(images, noise_std: float) -> torch.Tensor:
+    noise = torch.randn_like(images) * noise_std
+    noisy_images = images + noise
+    return torch.clamp(noisy_images, -1.0, 1.0)
+
 
 def train(
     model: nn.Module,
@@ -14,7 +22,7 @@ def train(
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     epoch: int,
-    log_interval: int = 2500,
+    log_interval: int = 50,
 ) -> None:
     model.train()
     criterion = nn.CrossEntropyLoss()
@@ -50,6 +58,28 @@ def test(model: nn.Module, device: torch.device, test_loader: DataLoader) -> tup
     return test_loss, accuracy
 
 
+def test_noisy(
+    model: nn.Module, device: torch.device, test_loader: DataLoader, noise_std: float
+) -> tuple:
+    model.eval()
+    criterion = nn.CrossEntropyLoss(reduction="sum")
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            noisy_data = add_noise(data, noise_std)
+            output = model(noisy_data)
+            test_loss += criterion(output, target).item()
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += pred.eq(target.view_as(pred)).sum().item()
+
+    test_loss /= len(test_loader.dataset)
+    accuracy = correct / len(test_loader.dataset) * 100.0
+    return test_loss, accuracy
+
+
+# CNN Model
 class SimpleCNN(nn.Module):
     def __init__(
         self,
@@ -118,6 +148,9 @@ class SimpleCNN(nn.Module):
             pass
 
 
+# Main Experiment Function
+
+
 def run_experiment(
     dataset_name: str,
     inhibition_strength: float,
@@ -174,24 +207,36 @@ def run_experiment(
         for epoch in range(1, epochs + 1):
             train(model, device, train_loader, optimizer, epoch)
             if plasticity:
+                # For simplicity decay by 5% each epoch
                 new_strength = inhibition_strength * (0.95**epoch)
                 model.update_inhibition_strength(new_strength)
 
         clean_loss, clean_acc = test(model, device, test_loader)
+        noisy_loss, noisy_acc = test_noisy(model, device, test_loader, noise_std)
+        print(
+            f"Trial {trial + 1} Results: Clean Accuracy: {clean_acc:.4f} Clean Loss: {clean_loss:.4f} | Noisy Accuracy: {noisy_acc:.4f} Noisy Loss: {noisy_loss:.4f}"
+        )
+
         all_clean_acc.append(clean_acc)
-        print(f"Clean Accuracy: {clean_acc:.4f} | Loss: {clean_loss:.4f}")
+        all_noisy_acc.append(noisy_acc)
 
     print(f"\nSummary over {trials} trials for {dataset_name}:")
     print(
         f"Clean Test Accuracy: Mean = {np.mean(all_clean_acc):.4f}, Std = {np.std(all_clean_acc):.4f}"
     )
+    print(
+        f"Noisy Test Accuracy: Mean = {np.mean(all_noisy_acc):.4f}, Std = {np.std(all_noisy_acc):.4f}"
+    )
+
+
+# Main function to run the experiment with different configurations
 
 
 def main():
     trials = 5
     epochs = 5
-    noise_stds = [0.0, 0.1, 0.2, 0.3, 0.4]
-    inhibition_strengths = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    noise_stds = [0.1, 0.2, 0.3, 0.4, 0.5]
+    inhibition_strengths = [0.1, 0.2, 0.3, 0.4, 0.5]
 
     # Progressively more brainlike configurations
     # 1. No lateral inhibition, no non-grid, no plasticity Baseline CNN pure ML
