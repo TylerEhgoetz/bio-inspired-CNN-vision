@@ -4,6 +4,10 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from mpl_toolkits.mplot3d import Axes3D
+from sklearn.manifold import TSNE
 
 MNIST_FASHIONMNIST_CLASSES = 10
 
@@ -13,6 +17,10 @@ MNIST_FASHIONMNIST_CLASSES = 10
 def add_noise(images, noise_std: float) -> torch.Tensor:
     noise = torch.randn_like(images) * noise_std
     noisy_images = images + noise
+    print(
+        "Difference between images and noisy images: ",
+        torch.mean(torch.abs(images - noisy_images)),
+    )
     return torch.clamp(noisy_images, -1.0, 1.0)
 
 
@@ -77,6 +85,108 @@ def test_noisy(
     test_loss /= len(test_loader.dataset)
     accuracy = correct / len(test_loader.dataset) * 100.0
     return test_loss, accuracy
+
+
+def feature_analysis(
+    model: nn.Module,
+    device: torch.device,
+    test_loader: DataLoader,
+    num_samples: int = 500,
+) -> None:
+    model.eval()
+    features = []
+    labels = []
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            _, feature_map = model(data, return_features=True)
+            feature_map = feature_map.view(feature_map.size(0), -1)
+            features.append(feature_map.cpu().numpy())
+            labels.append(target.cpu().numpy())
+            if len(np.concatenate(features)) >= num_samples:
+                break
+    features = np.concatenate(features, axis=0)[:num_samples]
+    labels = np.concatenate(labels, axis=0)[:num_samples]
+
+    # PCA 2D
+    pca_2d = PCA(n_components=2)
+    features_pca_2d = pca_2d.fit_transform(features)
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(
+        features_pca_2d[:, 0],
+        features_pca_2d[:, 1],
+        c=labels,
+        cmap="tab10",
+        alpha=0.7,
+    )
+    plt.colorbar(scatter, label="Classes")
+    plt.title("PCA 2D of Intermediate Features")
+    plt.xlabel("PCA Component 1")
+    plt.ylabel("PCA Component 2")
+    plt.savefig("pca_2d.png")
+    plt.show()
+
+    # PCA 3D
+    pca_3d = PCA(n_components=3)
+    features_pca_3d = pca_3d.fit_transform(features)
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection="3d")
+    scatter = ax.scatter(
+        features_pca_3d[:, 0],
+        features_pca_3d[:, 1],
+        features_pca_3d[:, 2],
+        c=labels,
+        cmap="tab10",
+        alpha=0.7,
+    )
+    ax.set_title("PCA 3D of Intermediate Features")
+    ax.set_xlabel("PCA Component 1")
+    ax.set_ylabel("PCA Component 2")
+    ax.set_zlabel("PCA Component 3")
+    plt.colorbar(scatter, label="Classes")
+    plt.savefig("pca_3d.png")
+    plt.show()
+
+    # t-SNE 2D
+    tsne_2d = TSNE(n_components=2, perplexity=30, init="random", random_state=42)
+    features_tsne_2d = tsne_2d.fit_transform(features)
+
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(
+        features_tsne_2d[:, 0],
+        features_tsne_2d[:, 1],
+        c=labels,
+        cmap="tab10",
+        alpha=0.7,
+    )
+    plt.colorbar(scatter, label="Classes")
+    plt.title("t-SNE 2D of Intermediate Features")
+    plt.xlabel("t-SNE Dim 1")
+    plt.ylabel("t-SNE Dim 2")
+    plt.savefig("tsne_2d.png")
+    plt.show()
+
+    # t-SNE 3D
+    tsne_3d = TSNE(n_components=3, perplexity=30, init="random", random_state=42)
+    features_tsne_3d = tsne_3d.fit_transform(features)
+    fig = plt.figure(figsize=(10, 8))
+
+    ax = fig.add_subplot(111, projection="3d")
+    scatter = ax.scatter(
+        features_tsne_3d[:, 0],
+        features_tsne_3d[:, 1],
+        features_tsne_3d[:, 2],
+        c=labels,
+        cmap="tab10",
+        alpha=0.7,
+    )
+    ax.set_title("t-SNE 3D of Intermediate Features")
+    ax.set_xlabel("t-SNE Dim 1")
+    ax.set_ylabel("t-SNE Dim 2")
+    ax.set_zlabel("t-SNE Dim 3")
+    plt.colorbar(scatter, label="Classes")
+    plt.savefig("tsne_3d.png")
+    plt.show()
 
 
 # CNN Model
@@ -220,6 +330,9 @@ def run_experiment(
         all_clean_acc.append(clean_acc)
         all_noisy_acc.append(noisy_acc)
 
+        if trial == 0:
+            feature_analysis(model, device, test_loader)
+
     print(f"\nSummary over {trials} trials for {dataset_name}:")
     print(
         f"Clean Test Accuracy: Mean = {np.mean(all_clean_acc):.4f}, Std = {np.std(all_clean_acc):.4f}"
@@ -270,7 +383,7 @@ def simpleMain():
     run_experiment(
         dataset_name="MNIST",
         inhibition_strength=0.1,
-        noise_std=0.1,
+        noise_std=0.2,
         epochs=5,
         trials=3,
         batch_size=64,
