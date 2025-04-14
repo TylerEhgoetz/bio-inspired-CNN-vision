@@ -92,6 +92,7 @@ def feature_analysis(
     device: torch.device,
     test_loader: DataLoader,
     num_samples: int = 500,
+    config_name: str = "Baseline",
 ) -> None:
     model.eval()
     features = []
@@ -123,7 +124,7 @@ def feature_analysis(
     plt.title("PCA 2D of Intermediate Features")
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
-    plt.savefig("pca_2d.png")
+    plt.savefig(f"pca_2d_{config_name}.png")
     plt.show()
 
     # PCA 3D
@@ -144,7 +145,7 @@ def feature_analysis(
     ax.set_ylabel("PCA Component 2")
     ax.set_zlabel("PCA Component 3")
     plt.colorbar(scatter, label="Classes")
-    plt.savefig("pca_3d.png")
+    plt.savefig(f"pca_3d_{config_name}.png")
     plt.show()
 
     # t-SNE 2D
@@ -163,7 +164,7 @@ def feature_analysis(
     plt.title("t-SNE 2D of Intermediate Features")
     plt.xlabel("t-SNE Dim 1")
     plt.ylabel("t-SNE Dim 2")
-    plt.savefig("tsne_2d.png")
+    plt.savefig(f"tsne_2d_{config_name}.png")
     plt.show()
 
     # t-SNE 3D
@@ -185,7 +186,7 @@ def feature_analysis(
     ax.set_ylabel("t-SNE Dim 2")
     ax.set_zlabel("t-SNE Dim 3")
     plt.colorbar(scatter, label="Classes")
-    plt.savefig("tsne_3d.png")
+    plt.savefig(f"tsne_3d_{config_name}.png")
     plt.show()
 
 
@@ -272,6 +273,7 @@ def run_experiment(
     use_lateral_inhibition: bool,
     use_non_grid: bool,
     plasticity: bool,
+    config_name: str,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Running experiment on {dataset_name} using device: {device}")
@@ -331,7 +333,9 @@ def run_experiment(
         all_noisy_acc.append(noisy_acc)
 
         if trial == 0:
-            feature_analysis(model, device, test_loader)
+            feature_analysis(
+                model, device, test_loader, num_samples=500, config_name=config_name
+            )
 
     print(f"\nSummary over {trials} trials for {dataset_name}:")
     print(
@@ -357,10 +361,30 @@ def main():
     # 3. Lateral inhibition, non-grid, no plasticity Multiple Biological features
     # 4. Lateral inhibition, non-grid, plasticity All Biological features
     configurations = [
-        {"use_lateral_inhibition": False, "use_non_grid": False, "plasticity": False},
-        {"use_lateral_inhibition": True, "use_non_grid": False, "plasticity": False},
-        {"use_lateral_inhibition": True, "use_non_grid": True, "plasticity": False},
-        {"use_lateral_inhibition": True, "use_non_grid": True, "plasticity": True},
+        {
+            "use_lateral_inhibition": False,
+            "use_non_grid": False,
+            "plasticity": False,
+            "config_name": "Baseline",
+        },
+        {
+            "use_lateral_inhibition": True,
+            "use_non_grid": False,
+            "plasticity": False,
+            "config_name": "Single Biological",
+        },
+        {
+            "use_lateral_inhibition": True,
+            "use_non_grid": True,
+            "plasticity": False,
+            "config_name": "Multiple Biological",
+        },
+        {
+            "use_lateral_inhibition": True,
+            "use_non_grid": True,
+            "plasticity": True,
+            "config_name": "All Biological",
+        },
     ]
 
     datasets = ["MNIST", "FashionMNIST"]
@@ -391,6 +415,7 @@ def simpleMain():
         use_lateral_inhibition=False,
         use_non_grid=False,
         plasticity=False,
+        config_name="Baseline",
     )
 
 
