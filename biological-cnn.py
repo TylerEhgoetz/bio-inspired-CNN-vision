@@ -131,7 +131,10 @@ def feature_analysis(
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
     plt.savefig(
-        f"pca_2d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+        os.path.join(
+            config_name,
+            f"pca_2d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png",
+        )
     )
     plt.show()
 
@@ -156,7 +159,10 @@ def feature_analysis(
     ax.set_zlabel("PCA Component 3")
     plt.colorbar(scatter, label="Classes")
     plt.savefig(
-        f"pca_3d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+        os.path.join(
+            config_name,
+            f"pca_3d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png",
+        )
     )
     plt.show()
 
@@ -179,7 +185,10 @@ def feature_analysis(
     plt.xlabel("t-SNE Dim 1")
     plt.ylabel("t-SNE Dim 2")
     plt.savefig(
-        f"tsne_2d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+        os.path.join(
+            config_name,
+            f"tsne_2d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png",
+        )
     )
     plt.show()
 
@@ -205,7 +214,10 @@ def feature_analysis(
     ax.set_zlabel("t-SNE Dim 3")
     plt.colorbar(scatter, label="Classes")
     plt.savefig(
-        f"tsne_3d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+        os.path.join(
+            config_name,
+            f"tsne_3d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png",
+        )
     )
     plt.show()
 
