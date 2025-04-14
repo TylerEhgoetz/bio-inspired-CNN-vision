@@ -6,8 +6,8 @@ from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from mpl_toolkits.mplot3d import Axes3D
 from sklearn.manifold import TSNE
+import os
 
 MNIST_FASHIONMNIST_CLASSES = 10
 
@@ -93,7 +93,10 @@ def feature_analysis(
     test_loader: DataLoader,
     num_samples: int = 500,
     config_name: str = "Baseline",
+    inhibition_strength: float = 0.0,
+    noise_std: float = 0.0,
 ) -> None:
+    os.makedirs(config_name, exist_ok=True)
     model.eval()
     features = []
     labels = []
@@ -121,10 +124,12 @@ def feature_analysis(
         alpha=0.7,
     )
     plt.colorbar(scatter, label="Classes")
-    plt.title("PCA 2D of Intermediate Features")
+    plt.title(
+        f"PCA 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+    )
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
-    plt.savefig(f"pca_2d_{config_name}.png")
+    plt.savefig(f"pca_2d_{config_name} {inhibition_strength} {noise_std}.png")
     plt.show()
 
     # PCA 3D
@@ -140,12 +145,14 @@ def feature_analysis(
         cmap="tab10",
         alpha=0.7,
     )
-    ax.set_title("PCA 3D of Intermediate Features")
+    ax.set_title(
+        f"PCA 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+    )
     ax.set_xlabel("PCA Component 1")
     ax.set_ylabel("PCA Component 2")
     ax.set_zlabel("PCA Component 3")
     plt.colorbar(scatter, label="Classes")
-    plt.savefig(f"pca_3d_{config_name}.png")
+    plt.savefig(f"pca_3d_{config_name} {inhibition_strength} {noise_std}.png")
     plt.show()
 
     # t-SNE 2D
@@ -161,10 +168,12 @@ def feature_analysis(
         alpha=0.7,
     )
     plt.colorbar(scatter, label="Classes")
-    plt.title("t-SNE 2D of Intermediate Features")
+    plt.title(
+        f"t-SNE 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+    )
     plt.xlabel("t-SNE Dim 1")
     plt.ylabel("t-SNE Dim 2")
-    plt.savefig(f"tsne_2d_{config_name}.png")
+    plt.savefig(f"tsne_2d_{config_name} {inhibition_strength} {noise_std}.png")
     plt.show()
 
     # t-SNE 3D
@@ -181,13 +190,33 @@ def feature_analysis(
         cmap="tab10",
         alpha=0.7,
     )
-    ax.set_title("t-SNE 3D of Intermediate Features")
+    ax.set_title(
+        f"t-SNE 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+    )
     ax.set_xlabel("t-SNE Dim 1")
     ax.set_ylabel("t-SNE Dim 2")
     ax.set_zlabel("t-SNE Dim 3")
     plt.colorbar(scatter, label="Classes")
-    plt.savefig(f"tsne_3d_{config_name}.png")
+    plt.savefig(f"tsne_3d_{config_name} {inhibition_strength} {noise_std}.png")
     plt.show()
+
+
+# Biologically inspired layers
+
+
+class LateralInhibition(nn.Module):
+    def __init__(self, channels: int, inhibition_strength: float = 0.5):
+        super(LateralInhibition, self).__init__()
+        self.inhibition_strength = inhibition_strength
+        self.channels = channels
+        # A fixed 3x3 kernel that averages the 8 neighbors excluding the center pixel
+        kernel = torch.ones((1, 1, 3, 3)) / 8.0
+        kernel[0, 0, 1, 1] = 0.0  # Center pixel is not included
+        self.register_buffer("kernel", kernel.expand(channels, 1, 3, 3))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        inhibition = F.conv2d(x, self.kernel, padding=1, groups=x.shape[1])
+        return x - self.inhibition_strength * inhibition
 
 
 # CNN Model
@@ -212,8 +241,7 @@ class SimpleCNN(nn.Module):
             self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
 
         if use_lateral_inhibition:
-            # Define lateral inhibition layers here
-            pass
+            self.lateral1 = LateralInhibition(16, self.current_inhibition_strength)
         else:
             self.lateral1 = nn.Identity()
 
@@ -226,8 +254,7 @@ class SimpleCNN(nn.Module):
             self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
 
         if use_lateral_inhibition:
-            # Define lateral inhibition layers here
-            pass
+            self.lateral2 = LateralInhibition(32, self.current_inhibition_strength)
         else:
             self.lateral2 = nn.Identity()
 
@@ -412,10 +439,10 @@ def simpleMain():
         trials=3,
         batch_size=64,
         test_batch_size=1000,
-        use_lateral_inhibition=False,
+        use_lateral_inhibition=True,
         use_non_grid=False,
         plasticity=False,
-        config_name="Baseline",
+        config_name="tests",
     )
 
 
