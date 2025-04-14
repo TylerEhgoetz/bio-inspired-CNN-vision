@@ -228,7 +228,7 @@ class LateralInhibition(nn.Module):
         return x - self.inhibition_strength * inhibition
 
 
-class NonGridConv2d(nn.Module):
+class NonGridConv2d(nn.Conv2d):
     def __init__(self, *args, sparsity: float = 0.7, **kwargs):
         super(NonGridConv2d, self).__init__(*args, **kwargs)
         mask = torch.bernoulli(torch.full(self.weight.shape, sparsity))
