@@ -95,6 +95,7 @@ def feature_analysis(
     config_name: str = "Baseline",
     inhibition_strength: float = 0.0,
     noise_std: float = 0.0,
+    dataset_name: str = "MNIST",
 ) -> None:
     os.makedirs(config_name, exist_ok=True)
     model.eval()
@@ -125,11 +126,13 @@ def feature_analysis(
     )
     plt.colorbar(scatter, label="Classes")
     plt.title(
-        f"PCA 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+        f"PCA 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
     )
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
-    plt.savefig(f"pca_2d_{config_name} {inhibition_strength} {noise_std}.png")
+    plt.savefig(
+        f"pca_2d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+    )
     plt.show()
 
     # PCA 3D
@@ -146,13 +149,15 @@ def feature_analysis(
         alpha=0.7,
     )
     ax.set_title(
-        f"PCA 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+        f"PCA 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
     )
     ax.set_xlabel("PCA Component 1")
     ax.set_ylabel("PCA Component 2")
     ax.set_zlabel("PCA Component 3")
     plt.colorbar(scatter, label="Classes")
-    plt.savefig(f"pca_3d_{config_name} {inhibition_strength} {noise_std}.png")
+    plt.savefig(
+        f"pca_3d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+    )
     plt.show()
 
     # t-SNE 2D
@@ -169,11 +174,13 @@ def feature_analysis(
     )
     plt.colorbar(scatter, label="Classes")
     plt.title(
-        f"t-SNE 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+        f"t-SNE 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
     )
     plt.xlabel("t-SNE Dim 1")
     plt.ylabel("t-SNE Dim 2")
-    plt.savefig(f"tsne_2d_{config_name} {inhibition_strength} {noise_std}.png")
+    plt.savefig(
+        f"tsne_2d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+    )
     plt.show()
 
     # t-SNE 3D
@@ -191,13 +198,15 @@ def feature_analysis(
         alpha=0.7,
     )
     ax.set_title(
-        f"t-SNE 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std}"
+        f"t-SNE 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
     )
     ax.set_xlabel("t-SNE Dim 1")
     ax.set_ylabel("t-SNE Dim 2")
     ax.set_zlabel("t-SNE Dim 3")
     plt.colorbar(scatter, label="Classes")
-    plt.savefig(f"tsne_3d_{config_name} {inhibition_strength} {noise_std}.png")
+    plt.savefig(
+        f"tsne_3d_{config_name}_{inhibition_strength}_{noise_std}_{dataset_name}.png"
+    )
     plt.show()
 
 
@@ -219,6 +228,19 @@ class LateralInhibition(nn.Module):
         return x - self.inhibition_strength * inhibition
 
 
+class NonGridConv2d(nn.Module):
+    def __init__(self, *args, sparsity: float = 0.7, **kwargs):
+        super(NonGridConv2d, self).__init__(*args, **kwargs)
+        mask = torch.bernoulli(torch.full(self.weight.shape, sparsity))
+        self.register_buffer("mask", mask)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        weight = self.weight * self.mask
+        return F.conv2d(
+            x, weight, self.bias, self.stride, self.padding, self.dilation, self.groups
+        )
+
+
 # CNN Model
 class SimpleCNN(nn.Module):
     def __init__(
@@ -235,8 +257,7 @@ class SimpleCNN(nn.Module):
         self.current_inhibition_strength = inhibition_strength
 
         if use_non_grid:
-            # Define non-grid connectivity layers here
-            pass
+            self.conv1 = NonGridConv2d(1, 16, kernel_size=3, padding=1, sparsity=0.7)
         else:
             self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
 
@@ -248,8 +269,7 @@ class SimpleCNN(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
 
         if use_non_grid:
-            # Define non-grid connectivity layers here
-            pass
+            self.conv2 = NonGridConv2d(16, 32, kernel_size=3, padding=1, sparsity=0.7)
         else:
             self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
 
@@ -361,7 +381,14 @@ def run_experiment(
 
         if trial == 0:
             feature_analysis(
-                model, device, test_loader, num_samples=500, config_name=config_name
+                model,
+                device,
+                test_loader,
+                num_samples=500,
+                config_name=config_name,
+                inhibition_strength=inhibition_strength,
+                noise_std=noise_std,
+                dataset_name=dataset_name,
             )
 
     print(f"\nSummary over {trials} trials for {dataset_name}:")
@@ -440,7 +467,7 @@ def simpleMain():
         batch_size=64,
         test_batch_size=1000,
         use_lateral_inhibition=True,
-        use_non_grid=False,
+        use_non_grid=True,
         plasticity=False,
         config_name="tests",
     )
