@@ -12,6 +12,20 @@ import time
 import csv
 
 MNIST_FASHIONMNIST_CLASSES = 10
+CSV_FILE = "experiment_results.csv"
+CSV_FIELDS = [
+    "dataset",
+    "config_name",
+    "trial",
+    "noise_std",
+    "inhibition_strength",
+    "clean_loss",
+    "clean_acc",
+    "noisy_loss",
+    "noisy_acc",
+    "runtime_sec",
+]
+INHIBITION_DECAY = 0.85
 
 # xxxxxxxxxxxxxxxxxxxxxxxxx
 # Utility Functions
@@ -22,12 +36,7 @@ MNIST_FASHIONMNIST_CLASSES = 10
 # and to test the robustness of the model
 def add_noise(images, noise_std: float) -> torch.Tensor:
     noise = torch.randn_like(images) * noise_std
-    noisy_images = images + noise
-    print(
-        "Difference between images and noisy images: ",
-        torch.mean(torch.abs(images - noisy_images)),
-    )
-    return torch.clamp(noisy_images, -1.0, 1.0)
+    return torch.clamp(images + noise, -1.0, 1.0)
 
 
 # Trains the model for one epoch
@@ -37,7 +46,7 @@ def train(
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     epoch: int,
-    log_interval: int = 50,
+    log_interval: int = 100,
 ) -> None:
     model.train()
     criterion = nn.CrossEntropyLoss()
@@ -137,7 +146,7 @@ def feature_analysis(
     )
     plt.colorbar(scatter, label="Classes")
     plt.title(
-        f"PCA 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
+        f"PCA 2D of Intermediate Features {config_name} Inhibition: {inhibition_strength} Noise: {noise_std} {dataset_name}"
     )
     plt.xlabel("PCA Component 1")
     plt.ylabel("PCA Component 2")
@@ -165,7 +174,7 @@ def feature_analysis(
         alpha=0.7,
     )
     ax.set_title(
-        f"PCA 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
+        f"PCA 3D of Intermediate Features {config_name} Inhibition: {inhibition_strength} Noise: {noise_std} {dataset_name}"
     )
     ax.set_xlabel("PCA Component 1")
     ax.set_ylabel("PCA Component 2")
@@ -195,7 +204,7 @@ def feature_analysis(
     )
     plt.colorbar(scatter, label="Classes")
     plt.title(
-        f"t-SNE 2D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
+        f"t-SNE 2D of Intermediate Features {config_name} Inhibition: {inhibition_strength} Noise: {noise_std} {dataset_name}"
     )
     plt.xlabel("t-SNE Dim 1")
     plt.ylabel("t-SNE Dim 2")
@@ -224,7 +233,7 @@ def feature_analysis(
         alpha=0.7,
     )
     ax.set_title(
-        f"t-SNE 3D of Intermediate Features {config_name} {inhibition_strength} {noise_std} {dataset_name}"
+        f"t-SNE 3D of Intermediate Features {config_name} Inhibition: {inhibition_strength} Noise: {noise_std} {dataset_name}"
     )
     ax.set_xlabel("t-SNE Dim 1")
     ax.set_ylabel("t-SNE Dim 2")
@@ -250,7 +259,7 @@ def feature_analysis(
 class LateralInhibition(nn.Module):
     def __init__(self, channels: int, inhibition_strength: float = 0.5):
         super(LateralInhibition, self).__init__()
-        self.inhibition_strength = inhibition_strength
+        self.strength = inhibition_strength
         self.channels = channels
         # A fixed 3x3 kernel that averages the 8 neighbors excluding the center pixel
         kernel = torch.ones((1, 1, 3, 3)) / 8.0
@@ -259,7 +268,7 @@ class LateralInhibition(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         inhibition = F.conv2d(x, self.kernel, padding=1, groups=x.shape[1])
-        return x - self.inhibition_strength * inhibition
+        return x - self.strength * inhibition
 
 
 # Non-grid convolution layer to simulate the non-grid connectivity of neurons in the brain
@@ -270,9 +279,14 @@ class NonGridConv2d(nn.Conv2d):
         self.register_buffer("mask", mask)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        weight = self.weight * self.mask
         return F.conv2d(
-            x, weight, self.bias, self.stride, self.padding, self.dilation, self.groups
+            x,
+            self.weight * self.mask.to(self.weight.device),
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
         )
 
 
@@ -282,85 +296,43 @@ class NonGridConv2d(nn.Conv2d):
 
 
 class SimpleCNN(nn.Module):
-    def __init__(
-        self,
-        use_lateral_inhibition: bool = False,
-        inhibition_strength: float = 0.0,
-        use_non_grid: bool = False,
-        plasticity: bool = False,
-    ):
-        super(SimpleCNN, self).__init__()
-        self.use_lateral_inhibition = use_lateral_inhibition
-        self.placticity = plasticity
-        self.initial_inhibition_strength = inhibition_strength
-        self.current_inhibition_strength = inhibition_strength
-
-        if use_non_grid:
-            self.conv1 = NonGridConv2d(1, 16, kernel_size=3, padding=1, sparsity=0.7)
-        else:
-            self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
-
-        if use_lateral_inhibition:
-            self.lateral1 = LateralInhibition(16, self.current_inhibition_strength)
-        else:
-            self.lateral1 = nn.Identity()
-
+    def __init__(self, use_li, li_strength, use_ng, plasticity):
+        super().__init__()
+        self.use_li, self.plasticity = use_li, plasticity
+        self.li_strength = li_strength
+        self.conv1 = (
+            NonGridConv2d(1, 16, 3, 1, 1) if use_ng else nn.Conv2d(1, 16, 3, 1, 1)
+        )
+        self.l1 = LateralInhibition(16, li_strength) if use_li else nn.Identity()
+        self.conv2 = (
+            NonGridConv2d(16, 32, 3, 1, 1) if use_ng else nn.Conv2d(16, 32, 3, 1, 1)
+        )
+        self.l2 = LateralInhibition(32, li_strength) if use_li else nn.Identity()
         self.pool = nn.MaxPool2d(2, 2)
-
-        if use_non_grid:
-            self.conv2 = NonGridConv2d(16, 32, kernel_size=3, padding=1, sparsity=0.7)
-        else:
-            self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-
-        if use_lateral_inhibition:
-            self.lateral2 = LateralInhibition(32, self.current_inhibition_strength)
-        else:
-            self.lateral2 = nn.Identity()
-
         self.fc1 = nn.Linear(32 * 7 * 7, 128)
         self.fc2 = nn.Linear(128, MNIST_FASHIONMNIST_CLASSES)
 
     def forward(self, x, return_features=False):
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.lateral1(x)
+        x = F.relu(self.l1(self.conv1(x)))
         x = self.pool(x)
-        # Save features
-        feature_map = x.clone()
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = self.lateral2(x)
+        feat = x.clone()
+        x = F.relu(self.l2(self.conv2(x)))
         x = self.pool(x)
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        if return_features:
-            return x, feature_map
-        return x
+        return (x, feat) if return_features else x
 
-    def update_inhibition_strength(self, new_strength: float) -> None:
-        self.current_inhibition_strength = new_strength
-        if self.use_lateral_inhibition:
-            self.lateral1.inhibition_strength = new_strength
-            self.lateral2.inhibition_strength = new_strength
+    def update_lateral_inhibition(self, epoch):
+        # decay at 15%
+        new = self.li_strength * (INHIBITION_DECAY**epoch)
+        self.l1.strength = new
+        self.l2.strength = new
 
 
 # xxxxxxxxxxxxxxxxxxxxxx
 # Main Experiment Function
 # xxxxxxxxxxxxxxxxxxxxx
-CSV_FILE = "experiment_results.csv"
-CSV_FIELDS = [
-    "dataset",
-    "config_name",
-    "trial",
-    "noise_std",
-    "inhibition_strength",
-    "clean_loss",
-    "clean_acc",
-    "noisy_loss",
-    "noisy_acc",
-    "runtime_sec",
-]
 
 
 def run_experiment(
@@ -419,9 +391,9 @@ def run_experiment(
             trial_start_time = time.time()
             try:
                 model = SimpleCNN(
-                    use_lateral_inhibition=use_lateral_inhibition,
-                    inhibition_strength=inhibition_strength,
-                    use_non_grid=use_non_grid,
+                    use_li=use_lateral_inhibition,
+                    li_strength=inhibition_strength,
+                    use_ng=use_non_grid,
                     plasticity=plasticity,
                 ).to(device)
                 optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
@@ -429,9 +401,7 @@ def run_experiment(
                 for epoch in range(1, epochs + 1):
                     train(model, device, train_loader, optimizer, epoch)
                     if plasticity:
-                        # For simplicity decay by 15% each epoch
-                        new_strength = inhibition_strength * (0.85**epoch)
-                        model.update_inhibition_strength(new_strength)
+                        model.update_lateral_inhibition(epoch)
 
                 clean_loss, clean_acc = test(model, device, test_loader)
                 noisy_loss, noisy_acc = test_noisy(
@@ -502,11 +472,10 @@ def run_experiment(
 
 
 def main():
-    trials = 3
-    epochs = 5
+    trials = 5
+    epochs = 3
     noise_stds = [0.3, 0.4, 0.5]
     inhibition_strengths = [0.3, 0.4, 0.5]
-
     # Progressively more brainlike configurations
     # 1. No lateral inhibition, no non-grid, no plasticity Baseline CNN pure ML
     # 2. Lateral inhibition, no non-grid, no plasticity Single Biological feature
@@ -572,17 +541,17 @@ def main():
 
 def simpleMain():
     run_experiment(
-        dataset_name="MNIST",
+        dataset_name="FashionMNIST",
         inhibition_strength=0.2,
         noise_std=0.2,
-        epochs=5,
-        trials=3,
+        epochs=15,
+        trials=5,
         batch_size=64,
         test_batch_size=1000,
         use_lateral_inhibition=True,
-        use_non_grid=True,
-        plasticity=True,
-        config_name="tests",
+        use_non_grid=False,
+        plasticity=False,
+        config_name="tests2single",
         save_model=True,
     )
 
