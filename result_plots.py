@@ -75,23 +75,25 @@ for dataset in datasets:
     plt.close()
 
     # Heatmap: Accuracy vs Inhibition Strength and Noise STD
+    congigs = df_dataset["config_name"].unique()
+    for config in congigs:
+        heatmap_data = df_dataset[df_dataset["config_name"] == config]
 
-    heatmap_data = df_dataset[df_dataset["config_name"] == "All Biological"]
-    heatmap_pivot = heatmap_data.pivot_table(
-        index="inhibition_strength",
-        columns="noise_std",
-        values="noisy_acc",
-        aggfunc="mean",
-    )
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(heatmap_pivot, annot=True, fmt=".1f", cmap="viridis")
-    plt.title("Heatmap: Noisy Accuracy (All Biological)")
-    plt.xlabel("Noise STD")
-    plt.ylabel("Inhibition Strength")
-    plt.savefig(
-        os.path.join("Results", f"heatmap_noisy_accuracy_all_biological_{dataset}.png")
-    )
-    plt.close()
+        heatmap_pivot = heatmap_data.pivot_table(
+            index="inhibition_strength",
+            columns="noise_std",
+            values="noisy_acc",
+            aggfunc="mean",
+        )
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(heatmap_pivot, annot=True, fmt=".1f", cmap="viridis")
+        plt.title(f"Heatmap: Noisy Accuracy {config}")
+        plt.xlabel("Noise STD")
+        plt.ylabel("Inhibition Strength")
+        plt.savefig(
+            os.path.join("Results", f"heatmap_noisy_accuracy_{config}_{dataset}.png")
+        )
+        plt.close()
 
     # Box Plot: Distribution of Noisy Accuracies by Configuration
 
